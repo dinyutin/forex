@@ -1,7 +1,7 @@
 package com.example.forex.dto;
 
 import java.util.List;
-
+//查完資料以後，組成一個格式，回傳給前端
 public class ExchangeRateQueryResponse {
 
     private ErrorInfo error;
@@ -58,3 +58,4 @@ public class ExchangeRateQueryResponse {
         }
     }
 }
+//DTO（Data Transfer Object）用來在不同系統、不同層之間傳遞資料

@@ -1,5 +1,7 @@
 package com.example.forex.service;
 
+import com.example.forex.dto.ExchangeRateQueryRequest;
+import com.example.forex.dto.ExchangeRateQueryResponse;
 import com.example.forex.model.ExchangeRate;
 import com.example.forex.repository.ExchangeRateRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -8,11 +10,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class ExchangeRateService {
@@ -62,6 +66,70 @@ public class ExchangeRateService {
         }
     }
 
+    public ExchangeRateQueryResponse queryExchangeRates(ExchangeRateQueryRequest request) {
+        ExchangeRateQueryResponse response = new ExchangeRateQueryResponse();
+
+        // 轉換日期字串 -> LocalDate
+        DateTimeFormatter requestFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+        LocalDate startDate;
+        LocalDate endDate;
+        try {
+            startDate = LocalDate.parse(request.getStartDate(), requestFormatter);
+            endDate = LocalDate.parse(request.getEndDate(), requestFormatter);
+        } catch (Exception e) {
+            ExchangeRateQueryResponse.ErrorInfo errorInfo = new ExchangeRateQueryResponse.ErrorInfo();
+            errorInfo.setCode("E003");
+            errorInfo.setMessage("日期格式錯誤");
+            response.setError(errorInfo);
+            response.setCurrency(null);
+            return response;
+        }
+
+        // 驗證起始日期不得大於結束日期
+        if (startDate.isAfter(endDate)) {
+            ExchangeRateQueryResponse.ErrorInfo errorInfo = new ExchangeRateQueryResponse.ErrorInfo();
+            errorInfo.setCode("E001");
+            errorInfo.setMessage("日期區間不符");
+            response.setError(errorInfo);
+            response.setCurrency(null);
+            return response;
+        }
+
+        // 驗證只允許查1年前 ~ 昨天
+        LocalDate today = LocalDate.now();
+        LocalDate minAllowed = today.minusYears(1);
+        LocalDate maxAllowed = today.minusDays(1);
+
+        if (startDate.isBefore(minAllowed) || endDate.isAfter(maxAllowed)) {
+            ExchangeRateQueryResponse.ErrorInfo errorInfo = new ExchangeRateQueryResponse.ErrorInfo();
+            errorInfo.setCode("E002");
+            errorInfo.setMessage("日期區間僅限1年前~當下日期-1天");
+            response.setError(errorInfo);
+            response.setCurrency(null);
+            return response;
+        }
+
+        // 查詢資料
+        List<ExchangeRate> rates = repository.findByDateGreaterThanEqualAndDateLessThanEqual(startDate, endDate);
+
+        // 組 CurrencyInfo
+        DateTimeFormatter outputFormatter = DateTimeFormatter.ofPattern("yyyyMMdd");
+        List<ExchangeRateQueryResponse.CurrencyInfo> currencyInfoList = rates.stream().map(rate -> {
+            ExchangeRateQueryResponse.CurrencyInfo info = new ExchangeRateQueryResponse.CurrencyInfo();
+            info.setDate(rate.getDate().format(outputFormatter));
+            info.setUsd(rate.getUsd().setScale(2, RoundingMode.HALF_UP).toString());
+            return info;
+        }).collect(Collectors.toList());
+
+        // 成功回傳
+        ExchangeRateQueryResponse.ErrorInfo successError = new ExchangeRateQueryResponse.ErrorInfo();
+        successError.setCode("0000");
+        successError.setMessage("成功");
+        response.setError(successError);
+        response.setCurrency(currencyInfoList);
+
+        return response;
+    }
 
     public List<ExchangeRate> queryExchangeRates(LocalDate startDate, LocalDate endDate) {
         return repository.findByDateGreaterThanEqualAndDateLessThanEqual(startDate, endDate);
